@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 
 from utils.api import call_deepseek
@@ -6,6 +7,13 @@ from utils.ocr import ocr_image_bytes
 from prompts import xiaoti, dazhuowen, xingce
 
 st.set_page_config(page_title="公考AI批改助手", page_icon="📝", layout="wide")
+
+# 部署到 Streamlit Cloud 时，从 Secrets 读取 API Key
+if "DEEPSEEK_API_KEY" not in os.environ:
+    try:
+        os.environ["DEEPSEEK_API_KEY"] = st.secrets["DEEPSEEK_API_KEY"]
+    except (KeyError, Exception):
+        pass
 
 st.title("📝 公考AI批改助手")
 st.markdown("调DeepSeek V4 Pro，帮你批改申论、分析行测错题")
