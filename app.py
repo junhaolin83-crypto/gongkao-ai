@@ -3,7 +3,6 @@ import streamlit as st
 
 from utils.api import call_deepseek
 from utils.history import add_record, get_records
-from utils.ocr import ocr_image_bytes
 from prompts import xiaoti, dazhuowen, xingce
 
 st.set_page_config(page_title="公考AI批改助手", page_icon="📝", layout="wide")
@@ -53,8 +52,9 @@ def ocr_uploader(expand_label: str, target_key: str, btn_label: str = "填入上
             image_bytes = cam.getvalue()
 
         if image_bytes and st.button("🔍 识别文字", key=f"ocr_{target_key}"):
-            with st.status("识别中，请稍候..."):
+            with st.status("识别中，首次加载需下载模型约100MB，请稍候..."):
                 try:
+                    from utils.ocr import ocr_image_bytes
                     text = ocr_image_bytes(image_bytes)
                     if text.strip():
                         st.session_state[target_key] = text
