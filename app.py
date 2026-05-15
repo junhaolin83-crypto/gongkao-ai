@@ -268,13 +268,23 @@ with tab5:
     if st.session_state.show_add_form:
         with st.container(border=True):
             st.markdown("##### 粘贴人民日报文章内容")
-            st.caption("从人民网复制文章全文粘贴到下方，点击AI分析自动生成素材结构")
+            st.caption("填入文章信息，AI自动生成结构化素材分析")
+            col_t1, col_t2, col_t3 = st.columns(3)
+            with col_t1:
+                art_title = st.text_input("标题", key="add_title")
+            with col_t2:
+                art_author = st.text_input("作者", key="add_author")
+            with col_t3:
+                art_column = st.text_input("栏目", placeholder="人民论坛/人民时评等", key="add_column")
+            art_url = st.text_input("原文链接（可选）", key="add_url", placeholder="http://paper.people.com.cn/...")
+            art_full = st.text_area("📄 原文全文（建议粘贴，方便后续复习）", height=200, key="add_full",
+                                   placeholder="粘贴人民日报文章全文...")
             text = st.text_area(
-                "文章内容",
+                "文章内容摘要（AI分析用）",
                 value=st.session_state.material_text,
-                height=300,
+                height=200,
                 key="material_input",
-                placeholder="粘贴文章全文（标题+正文）...",
+                placeholder="粘贴文章全文或摘要...",
             )
             col_btn1, col_btn2 = st.columns([1, 4])
             with col_btn1:
@@ -291,10 +301,18 @@ with tab5:
                                 st.error(result)
                             else:
                                 add_article({
+                                    "title": art_title or "",
+                                    "author": art_author or "",
+                                    "column": art_column or "",
+                                    "source": "人民日报",
+                                    "url": art_url or "",
+                                    "full_text": art_full or text,
                                     "date": datetime.now().strftime("%Y-%m-%d"),
                                     "raw": text,
                                     "analysis_raw": result,
                                 })
+                                for k in ["add_title", "add_author", "add_column", "add_url", "add_full"]:
+                                    st.session_state[k] = ""
                                 st.session_state.material_text = ""
                                 st.session_state.show_add_form = False
                                 st.success("✅ 素材已保存！")
@@ -316,16 +334,37 @@ with tab5:
         for art in articles:
             title = art.get("title", "")
             if not title:
-                # 从analysis_raw中提取标题
                 for line in art.get("analysis_raw", "").split("\n"):
-                    if "标题：" in line or "标题：" in line:
-                        title = line.split("：", 1)[-1].strip() if "：" in line else line.split(":", 1)[-1].strip()
+                    if "标题：" in line:
+                        title = line.split("：", 1)[-1].strip()
                         break
                 if not title:
                     title = f"人民日报 {art.get('date', '')}"
 
             with st.expander(f"📰 {title} — {art.get('date', '')}", expanded=False):
+                # 来源信息
+                src = art.get("source", "人民日报")
+                col = art.get("column", "")
+                author = art.get("author", "")
+                art_url = art.get("url", "")
+                info_parts = [f"**来源：** {src}"]
+                if col:
+                    info_parts.append(f"**栏目：** {col}")
+                if author:
+                    info_parts.append(f"**作者：** {author}")
+                st.markdown(" | ".join(info_parts))
+                if art_url:
+                    st.markdown(f"[🔗 原文链接]({art_url})")
+
+                # 全文
+                full_text = art.get("full_text", "")
+                if full_text:
+                    with st.expander("📖 查看原文全文", expanded=False):
+                        st.markdown(full_text)
+
+                # 结构化分析
                 analysis = art.get("analysis_raw", "暂无分析")
+                st.markdown("---")
                 st.markdown(analysis)
 
                 col_del, _ = st.columns([1, 5])
