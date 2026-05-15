@@ -207,7 +207,7 @@ with tab2:
                         matched = all_mats[:5]
 
                     if matched:
-                        sp, up = recommend_prompt.build_prompt(
+                        sp, up = recommend_prompt(
                             topic_hint, essay_text, matched
                         )
                         rec = call_deepseek(sp, up)
