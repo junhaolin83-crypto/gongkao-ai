@@ -292,6 +292,7 @@ with tab5:
     # 话题筛选
     all_topics = get_all_topics()
     topic_names = [t[0] for t in all_topics]
+    selected_topics = []
     if topic_names:
         selected_topics = st.multiselect(
             "🏷️ 按话题筛选", topic_names, default=[],
