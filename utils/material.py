@@ -2,14 +2,35 @@
 
 import json
 import os
-import re
+import tempfile
 from datetime import datetime
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-DB_FILE = os.path.join(DATA_DIR, "materials.json")
-SEED_FILE = os.path.join(DATA_DIR, "seed.json")
+# 数据目录：优先本地，云部署时回退到临时目录
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LOCAL_DATA = os.path.join(_SRC_DIR, "data")
 
-# 预设话题标签及关键词映射
+
+def _get_data_dir():
+    """返回可写的数据目录（云部署时本地可能只读）。"""
+    try:
+        os.makedirs(_LOCAL_DATA, exist_ok=True)
+        test = os.path.join(_LOCAL_DATA, ".rw_test")
+        with open(test, "w") as f:
+            f.write("ok")
+        os.remove(test)
+        return _LOCAL_DATA
+    except (OSError, PermissionError):
+        alt = os.path.join(tempfile.gettempdir(), "gongkao-ai")
+        os.makedirs(alt, exist_ok=True)
+        return alt
+
+
+DATA_DIR = _get_data_dir()
+DB_FILE = os.path.join(DATA_DIR, "materials.json")
+_SEED_FILE_LOCAL = os.path.join(_SRC_DIR, "data", "seed.json")
+_SEED_FILE_CLOUD = os.path.join(DATA_DIR, "seed.json")
+
+# 预设话题标签
 TOPIC_MAP = {
     "高质量发展": ["高质量", "发展主动", "产业升级", "转型", "增长极"],
     "科技创新": ["科技", "创新", "数字化", "AI", "算力", "智能", "技术"],
@@ -26,34 +47,38 @@ TOPIC_MAP = {
 }
 
 
-def _ensure_dir():
-    os.makedirs(DATA_DIR, exist_ok=True)
+def _find_seed():
+    """找到种子文件位置。"""
+    if os.path.exists(_SEED_FILE_LOCAL):
+        return _SEED_FILE_LOCAL
+    if os.path.exists(_SEED_FILE_CLOUD):
+        return _SEED_FILE_CLOUD
+    return None
 
 
 def _load():
-    _ensure_dir()
     if not os.path.exists(DB_FILE):
-        records = _load_seed()
-        _auto_tag(records)
-        _save(records)
-        return records
+        seed_path = _find_seed()
+        if seed_path:
+            records = _load_seed(seed_path)
+            _auto_tag(records)
+            _save(records)
+            return records
+        return []
     with open(DB_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def _load_seed():
-    if os.path.exists(SEED_FILE):
-        with open(SEED_FILE, "r", encoding="utf-8") as f:
-            records = json.load(f)
-        for i, r in enumerate(records):
-            r["id"] = i + 1
-            r["created_at"] = r.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
-        return records
-    return []
+def _load_seed(seed_path):
+    with open(seed_path, "r", encoding="utf-8") as f:
+        records = json.load(f)
+    for i, r in enumerate(records):
+        r["id"] = i + 1
+        r["created_at"] = r.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    return records
 
 
 def _auto_tag(records):
-    """根据文章内容自动打标签。"""
     for r in records:
         if r.get("tags"):
             continue
@@ -68,7 +93,6 @@ def _auto_tag(records):
 
 
 def _save(records):
-    _ensure_dir()
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=2)
 
@@ -90,7 +114,6 @@ def get_all_articles():
 
 
 def get_articles_by_topic(topic: str):
-    """按话题筛选文章，返回按日期倒序的结果。"""
     records = _load()
     if not topic:
         return sorted_records(records)
@@ -98,7 +121,6 @@ def get_articles_by_topic(topic: str):
 
 
 def get_all_topics():
-    """获取所有话题及文章计数。"""
     records = _load()
     counts = {}
     for r in records:
@@ -108,7 +130,6 @@ def get_all_topics():
 
 
 def search_materials(query: str):
-    """全文搜索素材。"""
     if not query:
         return get_all_articles()
     records = _load()
@@ -131,7 +152,6 @@ def delete_article(article_id: int):
 
 
 def get_stats():
-    """获取素材库统计。"""
     records = _load()
     topics = get_all_topics()
     return {
@@ -143,7 +163,6 @@ def get_stats():
 
 
 def recommend_for_topic(topic: str, limit=5):
-    """根据话题推荐素材，优先匹配标签，其次全文搜索。"""
     records = _load()
     scored = []
     for r in records:

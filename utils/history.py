@@ -1,8 +1,28 @@
 import json
 import os
+import tempfile
 from datetime import datetime
 
-HISTORY_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "records.json")
+# 数据目录：优先本地，云部署时回退到临时目录
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LOCAL_DATA = os.path.join(_SRC_DIR, "data")
+
+
+def _get_data_dir():
+    try:
+        os.makedirs(_LOCAL_DATA, exist_ok=True)
+        test = os.path.join(_LOCAL_DATA, ".rw_test")
+        with open(test, "w") as f:
+            f.write("ok")
+        os.remove(test)
+        return _LOCAL_DATA
+    except (OSError, PermissionError):
+        alt = os.path.join(tempfile.gettempdir(), "gongkao-ai")
+        os.makedirs(alt, exist_ok=True)
+        return alt
+
+
+HISTORY_FILE = os.path.join(_get_data_dir(), "records.json")
 
 
 def _load():
