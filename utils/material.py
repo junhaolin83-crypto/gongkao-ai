@@ -5,34 +5,9 @@ import os
 import tempfile
 from datetime import datetime
 
-# 数据目录：优先本地，云部署时回退到临时目录
-_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LOCAL_DATA = os.path.join(_SRC_DIR, "data")
-
-
-def _get_data_dir():
-    """返回可写的数据目录（云部署时本地可能只读）。"""
-    try:
-        os.makedirs(_LOCAL_DATA, exist_ok=True)
-        test = os.path.join(_LOCAL_DATA, ".rw_test")
-        with open(test, "w") as f:
-            f.write("ok")
-        os.remove(test)
-        return _LOCAL_DATA
-    except (OSError, PermissionError):
-        alt = os.path.join(tempfile.gettempdir(), "gongkao-ai")
-        os.makedirs(alt, exist_ok=True)
-        return alt
-
-
-DATA_DIR = _get_data_dir()
-DB_FILE = os.path.join(DATA_DIR, "materials.json")
-_SEED_FILE_LOCAL = os.path.join(_SRC_DIR, "data", "seed.json")
-_SEED_FILE_CLOUD = os.path.join(DATA_DIR, "seed.json")
-
-# 预设话题标签
+# 话题标签映射（纯数据，无IO操作）
 TOPIC_MAP = {
-    "高质量发展": ["高质量", "发展主动", "产业升级", "转型", "增长极"],
+    "gaozhiliang": "高质发展",
     "科技创新": ["科技", "创新", "数字化", "AI", "算力", "智能", "技术"],
     "文化自信": ["文化", "传统", "历史", "文明", "非遗", "国潮"],
     "基层治理": ["基层", "治理", "社区", "网格", "便民", "服务"],
@@ -46,43 +21,75 @@ TOPIC_MAP = {
     "干部作风": ["作风", "担当", "实干", "政绩观", "调研", "群众"],
 }
 
+# 延迟初始化：第一次调用时才确定路径
+_data_dir = None
+_db_file = None
 
-def _find_seed():
-    """找到种子文件位置。"""
-    if os.path.exists(_SEED_FILE_LOCAL):
-        return _SEED_FILE_LOCAL
-    if os.path.exists(_SEED_FILE_CLOUD):
-        return _SEED_FILE_CLOUD
+
+def _init():
+    """延迟初始化：确定可写数据目录。零IO时只做定义，调用时才执行。"""
+    global _data_dir, _db_file
+    if _data_dir is not None:
+        return
+
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_data = os.path.join(src_dir, "data")
+
+    # 尝试本地路径是否可写
+    writable = False
+    try:
+        os.makedirs(local_data, exist_ok=True)
+        test = os.path.join(local_data, ".rw")
+        with open(test, "w") as f:
+            f.write("1")
+        os.remove(test)
+        writable = True
+    except Exception:
+        writable = False
+
+    if writable:
+        _data_dir = local_data
+    else:
+        _data_dir = os.path.join(tempfile.gettempdir(), "gongkao-ai")
+        os.makedirs(_data_dir, exist_ok=True)
+
+    _db_file = os.path.join(_data_dir, "materials.json")
+
+
+def _seed_path():
+    """找到种子文件：优先本地data/，其次云端data/。"""
+    p1 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed.json")
+    if os.path.exists(p1):
+        return p1
+    p2 = os.path.join(_data_dir, "seed.json")
+    if os.path.exists(p2):
+        return p2
     return None
 
 
 def _load():
-    if not os.path.exists(DB_FILE):
-        seed_path = _find_seed()
-        if seed_path:
-            records = _load_seed(seed_path)
+    _init()
+    if not os.path.exists(_db_file):
+        sp = _seed_path()
+        if sp:
+            with open(sp, "r", encoding="utf-8") as f:
+                records = json.load(f)
+            for i, r in enumerate(records):
+                r.setdefault("id", i + 1)
+                r.setdefault("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
             _auto_tag(records)
             _save(records)
             return records
         return []
-    with open(DB_FILE, "r", encoding="utf-8") as f:
+    with open(_db_file, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def _load_seed(seed_path):
-    with open(seed_path, "r", encoding="utf-8") as f:
-        records = json.load(f)
-    for i, r in enumerate(records):
-        r["id"] = i + 1
-        r["created_at"] = r.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
-    return records
 
 
 def _auto_tag(records):
     for r in records:
         if r.get("tags"):
             continue
-        text = r.get("analysis_raw", "") + " " + r.get("full_text", "") + " " + r.get("title", "")
+        text = " ".join([r.get("analysis_raw", ""), r.get("full_text", ""), r.get("title", "")])
         tags = []
         for topic, keywords in TOPIC_MAP.items():
             for kw in keywords:
@@ -93,7 +100,8 @@ def _auto_tag(records):
 
 
 def _save(records):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
+    _init()
+    with open(_db_file, "w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=2)
 
 
@@ -109,21 +117,18 @@ def add_article(article: dict) -> int:
 
 
 def get_all_articles():
-    records = _load()
-    return sorted_records(records)
+    return sorted_records(_load())
 
 
 def get_articles_by_topic(topic: str):
-    records = _load()
     if not topic:
-        return sorted_records(records)
-    return sorted_records([r for r in records if topic in r.get("tags", [])])
+        return sorted_records(_load())
+    return sorted_records([r for r in _load() if topic in r.get("tags", [])])
 
 
 def get_all_topics():
-    records = _load()
     counts = {}
-    for r in records:
+    for r in _load():
         for t in r.get("tags", []):
             counts[t] = counts.get(t, 0) + 1
     return sorted(counts.items(), key=lambda x: x[1], reverse=True)
@@ -132,10 +137,9 @@ def get_all_topics():
 def search_materials(query: str):
     if not query:
         return get_all_articles()
-    records = _load()
     results = []
-    for r in records:
-        text = r.get("title", "") + r.get("analysis_raw", "") + r.get("full_text", "")
+    for r in _load():
+        text = " ".join([r.get("title", ""), r.get("analysis_raw", ""), r.get("full_text", "")])
         if query.lower() in text.lower():
             results.append(r)
     return sorted_records(results)
@@ -158,7 +162,7 @@ def get_stats():
         "total": len(records),
         "topics_covered": len(topics),
         "dates": len(set(r.get("date", "") for r in records)),
-        "latest_date": records[0]["date"] if records else "暂无",
+        "latest_date": records[0]["date"] if records else "NoData",
     }
 
 
@@ -167,10 +171,9 @@ def recommend_for_topic(topic: str, limit=5):
     scored = []
     for r in records:
         score = 0
-        tags = r.get("tags", [])
-        if topic in tags:
+        if topic in r.get("tags", []):
             score += 10
-        text = r.get("analysis_raw", "") + r.get("title", "")
+        text = r.get("analysis_raw", "") + " " + r.get("title", "")
         for kw in TOPIC_MAP.get(topic, []):
             if kw in text:
                 score += 1

@@ -3,42 +3,43 @@ import os
 import tempfile
 from datetime import datetime
 
-# 数据目录：优先本地，云部署时回退到临时目录
-_SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LOCAL_DATA = os.path.join(_SRC_DIR, "data")
+_history_file = None
 
 
-def _get_data_dir():
+def _init():
+    global _history_file
+    if _history_file is not None:
+        return
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    local_data = os.path.join(src_dir, "data")
     try:
-        os.makedirs(_LOCAL_DATA, exist_ok=True)
-        test = os.path.join(_LOCAL_DATA, ".rw_test")
+        os.makedirs(local_data, exist_ok=True)
+        test = os.path.join(local_data, ".rw")
         with open(test, "w") as f:
-            f.write("ok")
+            f.write("1")
         os.remove(test)
-        return _LOCAL_DATA
-    except (OSError, PermissionError):
+        _history_file = os.path.join(local_data, "records.json")
+    except Exception:
         alt = os.path.join(tempfile.gettempdir(), "gongkao-ai")
         os.makedirs(alt, exist_ok=True)
-        return alt
-
-
-HISTORY_FILE = os.path.join(_get_data_dir(), "records.json")
+        _history_file = os.path.join(alt, "records.json")
 
 
 def _load():
-    if not os.path.exists(HISTORY_FILE):
+    _init()
+    if not os.path.exists(_history_file):
         return []
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+    with open(_history_file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def _save(records):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+    _init()
+    with open(_history_file, "w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=2)
 
 
 def add_record(category: str, title: str, result: str):
-    """添加一条批改记录。"""
     records = _load()
     records.append({
         "id": len(records) + 1,
@@ -51,6 +52,5 @@ def add_record(category: str, title: str, result: str):
 
 
 def get_records(limit=20):
-    """获取最近limit条记录。"""
     records = _load()
     return records[-limit:][::-1]
