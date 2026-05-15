@@ -57,13 +57,17 @@ def _init():
 
 
 def _seed_path():
-    """找到种子文件：优先本地data/，其次云端data/。"""
-    p1 = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed.json")
-    if os.path.exists(p1):
-        return p1
-    p2 = os.path.join(_data_dir, "seed.json")
-    if os.path.exists(p2):
-        return p2
+    """找到种子文件：多路径回退保证云端/本地都能找到。"""
+    # 候选路径列表
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(root, "data", "seed.json"),
+        os.path.join(_data_dir or "", "seed.json"),
+        os.path.join(os.getcwd(), "data", "seed.json"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
     return None
 
 
