@@ -7,7 +7,7 @@ from datetime import datetime
 
 # 话题标签映射（纯数据，无IO操作）
 TOPIC_MAP = {
-    "gaozhiliang": "高质发展",
+    "高质量发展": ["高质量", "发展主动", "产业升级", "转型", "增长极"],
     "科技创新": ["科技", "创新", "数字化", "AI", "算力", "智能", "技术"],
     "文化自信": ["文化", "传统", "历史", "文明", "非遗", "国潮"],
     "基层治理": ["基层", "治理", "社区", "网格", "便民", "服务"],
@@ -167,16 +167,30 @@ def get_stats():
 
 
 def recommend_for_topic(topic: str, limit=5):
+    """根据话题文本从所有TOPIC_MAP关键词中匹配，给文章打分排序。"""
     records = _load()
+    # 找出输入文本命中了哪些话题标签
+    matched_topics = []
+    for tag, keywords in TOPIC_MAP.items():
+        for kw in keywords:
+            if kw in topic:
+                matched_topics.append(tag)
+                break
+    if not matched_topics:
+        matched_topics = ["综合"]
+
     scored = []
     for r in records:
         score = 0
-        if topic in r.get("tags", []):
-            score += 10
+        r_tags = r.get("tags", [])
+        for mt in matched_topics:
+            if mt in r_tags:
+                score += 10
         text = r.get("analysis_raw", "") + " " + r.get("title", "")
-        for kw in TOPIC_MAP.get(topic, []):
-            if kw in text:
-                score += 1
+        for mt in matched_topics:
+            for kw in TOPIC_MAP.get(mt, []):
+                if kw in text:
+                    score += 1
         if score > 0:
             scored.append((score, r))
     scored.sort(key=lambda x: x[0], reverse=True)
