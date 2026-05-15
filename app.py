@@ -1,9 +1,12 @@
 import os
+from datetime import datetime
 import streamlit as st
 
 from utils.api import call_deepseek
 from utils.history import add_record, get_records
+from utils.material import add_article, update_article, get_all_articles, delete_article
 from prompts import xiaoti, dazhuowen, xingce
+from prompts.material_analysis import build_prompt as material_prompt
 
 st.set_page_config(page_title="公考AI批改助手", page_icon="📝", layout="wide")
 
@@ -94,8 +97,8 @@ with st.sidebar:
     )
 
 # ---------- 标签页 ----------
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📄 申论小题批改", "📃 大作文批改", "🧮 行测错题分析", "📋 批改历史"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["📄 申论小题批改", "📃 大作文批改", "🧮 行测错题分析", "📋 批改历史", "📰 人民日报素材"]
 )
 
 # ==================== 小题 ====================
@@ -242,6 +245,95 @@ with tab4:
         for r in records:
             with st.expander(f"[{r['category']}] {r['title']} — {r['time']}"):
                 st.markdown(r["result"])
+
+# ==================== 人民日报素材 ====================
+with tab5:
+    st.subheader("📰 人民日报申论素材库")
+    st.caption("每日精选人民日报文章 → AI结构化分析 → 直接用于大作文")
+
+    col_left, col_right = st.columns([2, 1])
+    with col_left:
+        st.markdown("#### 📚 已收录文章")
+    with col_right:
+        if st.button("➕ 添加新素材", key="btn_add_material", use_container_width=True):
+            st.session_state.show_add_form = True
+
+    # 初始化
+    if "show_add_form" not in st.session_state:
+        st.session_state.show_add_form = False
+    if "material_text" not in st.session_state:
+        st.session_state.material_text = ""
+
+    # 添加表单
+    if st.session_state.show_add_form:
+        with st.container(border=True):
+            st.markdown("##### 粘贴人民日报文章内容")
+            st.caption("从人民网复制文章全文粘贴到下方，点击AI分析自动生成素材结构")
+            text = st.text_area(
+                "文章内容",
+                value=st.session_state.material_text,
+                height=300,
+                key="material_input",
+                placeholder="粘贴文章全文（标题+正文）...",
+            )
+            col_btn1, col_btn2 = st.columns([1, 4])
+            with col_btn1:
+                if st.button("🤖 AI分析并保存", key="btn_analyze", use_container_width=True):
+                    if not api_key:
+                        st.error("请先在侧边栏填入 API Key")
+                    elif not text.strip():
+                        st.warning("请粘贴文章内容")
+                    else:
+                        with st.spinner("AI分析中..."):
+                            sp, up = material_prompt(text)
+                            result = call_deepseek(sp, up)
+                            if result.startswith("API调用失败") or result.startswith("配置错误"):
+                                st.error(result)
+                            else:
+                                add_article({
+                                    "date": datetime.now().strftime("%Y-%m-%d"),
+                                    "raw": text,
+                                    "analysis_raw": result,
+                                })
+                                st.session_state.material_text = ""
+                                st.session_state.show_add_form = False
+                                st.success("✅ 素材已保存！")
+                                st.rerun()
+            with col_btn2:
+                if st.button("取消", key="btn_cancel_material"):
+                    st.session_state.show_add_form = False
+                    st.rerun()
+
+    # 文章列表
+    articles = get_all_articles()
+    if not articles:
+        st.info(
+            "📭 暂无素材\n\n"
+            "点击「添加新素材」粘贴人民日报文章，AI会自动帮你提炼分论点、论据和金句。\n\n"
+            "你也可以每天早上让我搜索人民日报文章，然后添加到这里。"
+        )
+    else:
+        for art in articles:
+            title = art.get("title", "")
+            if not title:
+                # 从analysis_raw中提取标题
+                for line in art.get("analysis_raw", "").split("\n"):
+                    if "标题：" in line or "标题：" in line:
+                        title = line.split("：", 1)[-1].strip() if "：" in line else line.split(":", 1)[-1].strip()
+                        break
+                if not title:
+                    title = f"人民日报 {art.get('date', '')}"
+
+            with st.expander(f"📰 {title} — {art.get('date', '')}", expanded=False):
+                analysis = art.get("analysis_raw", "暂无分析")
+                st.markdown(analysis)
+
+                col_del, _ = st.columns([1, 5])
+                with col_del:
+                    if st.button("🗑️ 删除", key=f"del_{art['id']}"):
+                        delete_article(art["id"])
+                        st.rerun()
+
 
 # ---------- 页脚 ----------
 st.divider()
